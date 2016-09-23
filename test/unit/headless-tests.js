@@ -30,22 +30,27 @@ var _chaincodeProto = grpc.load("../../lib/protos/chaincode.proto").protos;
 
 // FileKeyValueStore tests /////////////
 var FileKeyValueStore = require('../../lib/FileKeyValueStore.js');
-var keyValStorePath = "/tmp/keyValStore";
+//Note: unix relative path does not start with '/'
+//windows relative path starts with '/'
+var keyValStorePath1 = "tmp/keyValStore1";
+var keyValStorePath2 = "/tmp/keyValStore2";
 var testKey = "keyValFileStoreKey";
 var testValue = "secretKeyValue";
 var store1 = "";
+var store2 = "";
 // End: FileKeyValueStore tests ////////
 
 // Chain tests /////////////
 var Chain = require('../../lib/Chain.js');
 var chainName = "testChain";
-var keyValStorePath2 = keyValStorePath + "2";
-var store2 = "";
+var chainKeyValStorePath = "tmp/chainKeyValStorePath";
+var store3 = "";
 var chain = null;
 // End: Chain tests ////////
 
 // Peer tests ////////
-// var Peer = require('../../lib/Peer.js');
+var Peer = require('../../lib/Peer.js');
+var peerUrl = "grpc://localhost:7051";
 // var EventEmitter = require('events');
 // End: Peer tests ////////
 
@@ -54,14 +59,28 @@ var chain = null;
 // Run the FileKeyValueStore test
 //
 test('FileKeyValueStore constructor test', function(t) {
-    cleanupFileKeyValueStore(keyValStorePath);
-    
-    store1 = new FileKeyValueStore(keyValStorePath);
-    var exists = utils.exists(getAbsolutePath(keyValStorePath));
+    cleanupFileKeyValueStore(keyValStorePath1);
+    cleanupFileKeyValueStore(keyValStorePath2);
+
+    console.log("keyValStorePath1: "+keyValStorePath1);
+    console.log("relativePath: "+getRelativePath(keyValStorePath1));
+    store1 = new FileKeyValueStore(getRelativePath(keyValStorePath1));    
+    console.log("absolutePath: "+getAbsolutePath(keyValStorePath1));
+    var exists = utils.exists(getAbsolutePath(keyValStorePath1));
     if (exists)
         t.pass("FileKeyValueStore constructor test:  Successfully created new directory");
     else         
-        t.fail("FileKeyValueStore constructor test:  Failed to create new directory: " + keyValStorePath);
+        t.fail("FileKeyValueStore constructor test:  Failed to create new directory: " + keyValStorePath1);
+
+    console.log("keyValStorePath2: "+keyValStorePath2);
+    console.log("relativePath: "+getRelativePath(keyValStorePath2));
+    store2 = new FileKeyValueStore(getRelativePath(keyValStorePath2));    
+    console.log("absolutePath: "+getAbsolutePath(keyValStorePath2));
+    var exists = utils.exists(getAbsolutePath(keyValStorePath2));
+    if (exists)
+        t.pass("FileKeyValueStore constructor test:  Successfully created new directory");
+    else         
+        t.fail("FileKeyValueStore constructor test:  Failed to create new directory: " + keyValStorePath2);
 
     t.end();
 })
@@ -72,14 +91,29 @@ test('FileKeyValueStore setValue test', function(t) {
         if (result) {
             t.pass("FileKeyValueStore setValue test:  Successfully set value");
         
-            var exists = utils.exists(getAbsolutePath(keyValStorePath), testKey);
+            var exists = utils.exists(getAbsolutePath(keyValStorePath1), testKey);
             if (exists) {
-                t.pass("FileKeyValueStore setValue test:  Verified the file for key " + testKey + " does exist");
+                t.pass("FileKeyValueStore1 setValue test:  Verified the file for key " + testKey + " does exist");
             } else {
-                t.fail("FileKeyValueStore setValue test:  Failed to create file for key " + testKey + "");
+                t.fail("FileKeyValueStore1 setValue test:  Failed to create file for key " + testKey + "");
             }
         } else {
-            t.fail("FileKeyValueStore setValue test:  Failed to set value");            
+            t.fail("FileKeyValueStore1 setValue test:  Failed to set value");            
+        }
+    });
+    store2.setValue(testKey, testValue)
+    .then(function(result) {
+        if (result) {
+            t.pass("FileKeyValueStore setValue test:  Successfully set value");
+
+            var exists = utils.exists(getAbsolutePath(keyValStorePath2), testKey);
+            if (exists) {
+                t.pass("FileKeyValueStore2 setValue test:  Verified the file for key " + testKey + " does exist");
+            } else {
+                t.fail("FileKeyValueStore2 setValue test:  Failed to create file for key " + testKey + "");
+            }
+        } else {
+            t.fail("FileKeyValueStore2 setValue test:  Failed to set value");            
         }
     });
 
@@ -92,9 +126,25 @@ test('FileKeyValueStore getValue test', function(t) {
         // Log the fulfillment value
         function(val) {
             if (val != testValue) {
-                t.fail("FileKeyValueStore getValue test:  "+ val + " does not equal testValue of " + testValue + "for FileKeyValueStore read and write test");
+                t.fail("FileKeyValueStore1 getValue test:  "+ val + " does not equal testValue of " + testValue + "for FileKeyValueStore read and write test");
             } else {
-                t.pass("FileKeyValueStore getValue test:  Successfully retrieved value");
+                t.pass("FileKeyValueStore1 getValue test:  Successfully retrieved value");
+            }
+        })
+    .catch(
+        // Log the rejection reason
+        function(reason) {
+            t.fail(reason);
+        });
+
+    store2.getValue(testKey)
+    .then(
+        // Log the fulfillment value
+        function(val) {
+            if (val != testValue) {
+                t.fail("FileKeyValueStore2 getValue test:  "+ val + " does not equal testValue of " + testValue + "for FileKeyValueStore read and write test");
+            } else {
+                t.pass("FileKeyValueStore2 getValue test:  Successfully retrieved value");
             }
         })
     .catch(
@@ -107,30 +157,43 @@ test('FileKeyValueStore getValue test', function(t) {
 
 });
 
-test('Chain setKeyValueStore test', function(t) {
-    cleanupFileKeyValueStore(keyValStorePath2);
 
+// Chain & Peer tests ///////////// 
+test('Chain constructor test', function(t) {
     chain = new Chain(chainName);
-    chain.setKeyValueStore(hfc.newKeyValueStore(keyValStorePath2));
+    if (chain.getName() === chainName)
+        t.pass("Chain constructor test: getName successful");
+    else t.fail("Chain constructor test: getName not successful");
+    t.end();
+});
+/*
+test('Peer constructor test', function(t) {
+    var peer1 = new Peer(peerUrl, chain, pem);
+});
+*/
+test('Chain setKeyValueStore test', function(t) {
+    cleanupFileKeyValueStore(chainKeyValStorePath);
 
-    var exists = utils.exists(getAbsolutePath(keyValStorePath2));
+    chain.setKeyValueStore(hfc.newKeyValueStore(getRelativePath(chainKeyValStorePath)));
+
+    var exists = utils.exists(getAbsolutePath(chainKeyValStorePath));
     if (exists)
         t.pass("Chain setKeyValueStore test:  Successfully created new directory");
     else 
-        t.fail("Chain setKeyValueStore test:  Failed to create new directory: " + keyValStorePath2);
+        t.fail("Chain setKeyValueStore test:  Failed to create new directory: " + chainKeyValStorePath);
     
     t.end();
 });
 
 test('Chain getKeyValueStore test', function(t) {
-    store2 = chain.getKeyValueStore();
+    store3 = chain.getKeyValueStore();
 
-    store2.setValue(testKey, testValue)
+    store3.setValue(testKey, testValue)
     .then(function(result) {
         if (result) {
             t.pass("Chain getKeyValueStore test:  Successfully set value");
 
-            var exists = utils.exists(getAbsolutePath(keyValStorePath2), testKey);
+            var exists = utils.exists(getAbsolutePath(chainKeyValStorePath), testKey);
             if (exists)
                 t.pass("Chain getKeyValueStore test:  Verified the file for key " + testKey + " does exist");
             else {
@@ -144,7 +207,7 @@ test('Chain getKeyValueStore test', function(t) {
 });
 
 test('Chain KeyValueStore getValue test', function(t) {
-    store2.getValue(testKey)
+    store3.getValue(testKey)
     .then(
         // Log the fulfillment value
         function(val) {
@@ -244,12 +307,28 @@ function cleanupFileKeyValueStore(keyValStorePath) {
     var absPath = getAbsolutePath(keyValStorePath);
     var exists = utils.exists(absPath);
     if (exists) {
+        console.log("removing "+absPath);
         execSync('rm -rf ' + absPath);
     }
 }
 
 // prepend absolute path where this test is running, then join to the relative path
-function getAbsolutePath(pathStr) {
-    return path.join(__dirname, utils.getRelativeFilePath(pathStr));
+function getAbsolutePath(dir) {
+    return path.join(__dirname, getRelativePath(dir));
+};
+
+// get relative file path for either Unix or Windows
+// unix relative path does not start with '/'
+// windows relative path starts with '/'
+function getRelativePath(dir /*string*/) {
+    if(/^win/.test(process.platform)) {
+        if (!dir.startsWith("/")) dir = "/" + dir;
+        dir = path.resolve(dir);
+        dir = dir.replace(/([A-Z]:[\\\/]).*?/gi, '');
+        return dir;
+    } else {
+        if (dir.startsWith("/")) dir = dir.substr(1);
+        return dir;
+    }
 };
 
